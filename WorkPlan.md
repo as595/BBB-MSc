@@ -6,11 +6,11 @@
 
 ## Plan of Work
 
-- Establish a baseline classification for HTRU1 using a standard MLP.
-- Replicate [Figure 1 from Hinton et al. 2012](https://arxiv.org/pdf/1207.0580.pdf) for HTRU1 to establish the effect of dropout on performance.
-- Use the approach in [Section 5.2 of Gal & Ghahrami 2015](https://arxiv.org/pdf/1506.02142.pdf) to estimate the epistemic uncertainty for each object in the test set.
-- Examine the distribution of epistemic uncertainty with respect to the characteristics of the test set pulsar population - is there a systematic bias in the confidence of classification for particular types of pulsar? (compare with e.g. Fig 5 of [this paper](http://arxiv.org/abs/1406.3627))
-- Test how the epistemic uncertainty depends on the selection of training data. 
+- Replicate the MNIST experiment from [Blundell et al. 2015](https://arxiv.org/pdf/1505.05424.pdf) as a validation check.
+- Establish a baseline FRI/FRII classification for MiraBest using an appropriate CNN.
+- Use the approach in [Blundell et al. 2015](https://arxiv.org/pdf/1505.05424.pdf) for the MiraBest data set and compare the results.
+- Implement a weight-pruning method based on the probability distribution associated with each network weight, following [Sec.5.1 of the Blundell paper] (https://arxiv.org/pdf/1505.05424.pdf)
+- Examine the distribution of epistemic uncertainty with respect to the characteristics of the test set radio galaxy population - is there a systematic bias in the confidence of classification for particular types of galaxy?
 
 ### Possible extensions:
 
