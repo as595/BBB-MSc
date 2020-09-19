@@ -11,7 +11,8 @@
 - Use the approach in [Blundell et al. 2015](https://arxiv.org/pdf/1505.05424.pdf) for the MiraBest data set and compare the results.
 - Implement a weight-pruning method based on the probability distribution associated with each network weight, following [Sec.5.1 of the Blundell paper](https://arxiv.org/pdf/1505.05424.pdf)
 - Examine the distribution of epistemic uncertainty with respect to the characteristics of the test set radio galaxy population - is there a systematic bias in the confidence of classification for particular types of galaxy?
-- Look at the [transfer learning](https://arxiv.org/pdf/1903.11921.pdf) ability of your network to the [FRDEEP data set](https://github.com/HongmingTang060313/FR-DEEP) - are the results better than for a non-Bayesian version of the same network?
+- Look at the [transfer learning](https://arxiv.org/pdf/1903.11921.pdf) ability of your network to the [FRDEEP data set](https://github.com/HongmingTang060313/FR-DEEP) - are the results better than for a non-Bayesian version of the same network? What about for the NVSS images of the same test objects?
+
 
 ### Possible extensions:
 
