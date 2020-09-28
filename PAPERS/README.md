@@ -13,3 +13,8 @@ Machine learning:
  - [Original Bayes by Backprop paper](https://arxiv.org/pdf/1505.05424.pdf)
  - [Dropout for regularization paper](https://arxiv.org/pdf/1207.0580.pdf)
  - [Dropout as a Bayesian Approximation paper](https://arxiv.org/pdf/1506.02142.pdf)
+ 
+ ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Statistics:
+ 
+ - [Variational Inference: A Review for Statisticians](https://arxiv.org/pdf/1601.00670.pdf)
