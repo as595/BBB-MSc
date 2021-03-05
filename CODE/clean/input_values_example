@@ -1,0 +1,9 @@
+bbb27:
+prior = [3/4, exp(-1), exp(-7)]
+weight and bias init: mu = U(-0.1,0.1), rho = U(-5,-4)
+relu in both hidden layers
+number of samples = 1
+burnin= None
+optimizer = SGD(lr= 1e-4, momentum=9e-1)
+drop_last = False
+epochs = 1000
