@@ -11,6 +11,7 @@ import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as transforms
 from torchvision import datasets
+from torch.utils.data.sampler import SubsetRandomSampler
 import torch.optim as optim
 #from torchsummary import summary
 import numpy as np
@@ -18,6 +19,7 @@ import pylab as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
 from torch.distributions import Normal
+
 import pickle
 import torch.nn.utils.prune as prune
 import os
@@ -56,7 +58,8 @@ def density_snr(model):
     rho_post_w = np.append(model.h1.w_rho.detach().numpy().flatten(), model.h2.w_rho.detach().numpy().flatten())
     rho_post_w = np.append(rho_post_w, model.out.w_rho.detach().numpy().flatten())
     #convert rho to sigma
-    sigma_post_w = np.log(1+np.exp(rho_post_w))
+    #sigma_post_w = np.log(1+np.exp(rho_post_w))
+    sigma_post_w = np.exp(rho_post_w)
     #calculate SNR = |mu_weight|/sigma_weight
     SNR = abs(mu_post_w)/sigma_post_w
     db_SNR = 10*np.log10(SNR)
@@ -76,7 +79,7 @@ path = './MNISTdataset'
 learning_rate = torch.tensor(1e-5) # Initial learning rate {1e-3, 1e-4, 1e-5}
 momentum = torch.tensor(9e-1)
 burnin = None
-
+T = 1.0
 #uncomment for Hinton SGD
 '''
 learning_rate = torch.tensor(1e-1) #1e-1 # Initial learning rate
@@ -98,11 +101,36 @@ opener.addheaders = [('User-agent', 'Mozilla/5.0')]
 urllib.request.install_opener(opener)
 '''
 #%%
+
 transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.1307,), (0.3081,))])
+
 trainset = datasets.MNIST(root = path, train=True, download=True, transform=transform)
-trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=batch_size,shuffle=True, drop_last=False, **kwargs)
+#trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=batch_size,shuffle=True, drop_last=False, **kwargs)
+
+# https://stackoverflow.com/questions/50544730/how-do-i-split-a-custom-dataset-into-training-and-test-datasets 
+# Creating data indices for training and validation splits:
+dataset_size = len(trainset)
+indices = list(range(dataset_size))
+split = 10000 #int(np.floor(validation_split * dataset_size))
+shuffle_dataset = True
+#random_seed= 42
+ 
+if shuffle_dataset :
+    #np.random.seed(random_seed)
+    np.random.shuffle(indices)
+train_indices, val_indices = indices[split:], indices[:split]
+
+# Creating data samplers and loaders:
+train_sampler = SubsetRandomSampler(train_indices)
+valid_sampler = SubsetRandomSampler(val_indices)
+
+train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, sampler=train_sampler)
+validation_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, sampler=valid_sampler)
+
+ 
 testset = datasets.MNIST(root = path, train=False, download=True, transform=transform)
-testloader = torch.utils.data.DataLoader(dataset=testset, batch_size=batch_size,shuffle=True, drop_last=False, **kwargs)
+test_loader = torch.utils.data.DataLoader(dataset=testset, batch_size=batch_size,shuffle=True, drop_last=False, **kwargs)
+
 
 #%%
 model = Classifier_BBB(input_size, hidden_size, output_size).to(device)
@@ -111,9 +139,10 @@ optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=momen
 #optimizer = optim.Adam(model.parameters(), lr= torch.tensor(1e-4), weight_decay=torch.tensor(1e-5))
 #optimizer = SGDHinton(model.parameters(), lr=learning_rate, momentum=p_i, l2_limit=torch.tensor(0))
 #%%
-num_batches_train = len(trainloader)
-num_batches_test = len(testloader)
-print(num_batches_train, num_batches_test)
+num_batches_train = len(train_loader)
+num_batches_valid = len(validation_loader)
+num_batches_test = len(test_loader)
+print(num_batches_train,num_batches_valid, num_batches_test)
 #%%
 
 epochs = 1000
@@ -125,17 +154,22 @@ epoch_trainloss_complexity, epoch_testloss_complexity = [], []
 epoch_trainloss_loglike, epoch_testloss_loglike = [], []
 
 epoch_testerr = []
+
+early_stopping = True
+_bestacc = 0.
+
+
 for epoch in range(epochs):
 
     train_loss, train_accs=[],[]; acc = 0
     train_loss_c, train_loss_l = [],[]
     
-    for batch, (x_train, y_train) in enumerate(trainloader):
+    for batch, (x_train, y_train) in enumerate(train_loader):
         model.train()
         x_train, y_train = x_train.to(device), y_train.to(device)
         model.zero_grad()
                 
-        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_train, y_train, 1, batch, num_batches_train, burnin=burnin)
+        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_train, y_train, 1, batch, num_batches_train, samples_batch=batch_size, T=T, burnin=burnin)
         train_loss.append(loss.item())
         train_loss_c.append(complexity_cost.item())
         train_loss_l.append(likelihood_cost.item())
@@ -156,11 +190,11 @@ for epoch in range(epochs):
         
         test_loss, test_accs = [], []; acc = 0
         test_loss_c, test_loss_l = [], []
-        for i, (x_test, y_test) in enumerate(testloader):
+        for i, (x_test, y_test) in enumerate(validation_loader):
             model.eval()
             x_test, y_test = x_test.to(device), y_test.to(device)
             #samples = 5?
-            loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_test, burnin=burnin)
+            loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_valid, samples_batch=batch_size, T=T, burnin=burnin)
             
             acc = (pred.mean(dim=0).argmax(dim=-1) == y_test).to(torch.float32).mean()
             
@@ -171,7 +205,7 @@ for epoch in range(epochs):
             test_accs.append(acc.mean().item())
 
     print('Epoch: {}, Test Loss: {}, Test Accuracy: {}, Test Error: {}'.format(epoch, np.mean(test_loss), np.mean(test_accs), 100.*(1 - np.mean(test_accs))))
-    
+
     #save density and snr
     '''
     if(epoch % 40 ==0 ): #40
@@ -193,8 +227,25 @@ for epoch in range(epochs):
     epoch_testloss_complexity.append(np.mean(test_loss_c))
     epoch_testloss_loglike.append(np.mean(test_loss_l))
     
+    accuracy = epoch_testaccs[-1]
+    # check early stopping criteria:
+    if early_stopping and accuracy>_bestacc:
+        _bestacc = accuracy
+        torch.save(model.state_dict(), "model.pt")
+        best_acc = accuracy
+        best_epoch = epoch
+
+    
 print('Finished Training')
-print("Final test error: ",100.*(1 - epoch_testaccs[-1]))
+print("Final validation error: ",100.*(1 - epoch_testaccs[-1]))
+
+if early_stopping:
+    print("Best validation error: ",100.*(1 - best_acc)," @ epoch: "+str(best_epoch))
+
+
+if not early_stopping:
+    torch.save(model.state_dict(), "model.pt")
+
 
 #%%
 density, db_SNR = density_snr(model)            
@@ -217,7 +268,6 @@ torch.save({
 '''
 #%%
 ## plots
-pl.subplot(111)
 pl.figure(dpi=200)
 pl.plot(epoch_trainloss, label='train loss')
 pl.plot(epoch_testloss, label='val loss')
@@ -230,17 +280,15 @@ pl.xlabel('Epochs')
 pl.ylabel('Loss')
 pl.show()
 #%%
-pl.subplot(111)
 pl.figure(dpi=200)
 pl.plot(epoch_trainloss_complexity, label='train loss')
-pl.plot(epoch_testloss_complexity, label='val loss')
+#pl.plot(epoch_testloss_complexity, label='val loss')
 pl.legend(loc='upper right')
 pl.grid(True)
 pl.xlabel('Epochs')
 pl.ylabel('Weighted complexity cost')
 pl.show()
 #%%
-pl.subplot(111)
 pl.figure(dpi=200)
 pl.plot(epoch_trainloss_loglike, label='train loss')
 pl.plot(epoch_testloss_loglike, label='val loss')
@@ -250,11 +298,10 @@ pl.xlabel('Epochs')
 pl.ylabel('negative log likelihood cost')
 pl.show()
 #%%
-pl.subplot(111)
 pl.figure(dpi=200)
 pl.plot(epoch_testerr)
 #pl.legend(loc='lower right')
-#pl.ylim(1.3,2.4)
+#pl.ylim(1.3,  5)
 pl.grid(True)
 pl.xlabel('Epochs')
 pl.ylabel('Validation error(%)')
@@ -297,4 +344,35 @@ with open("trainloss_complexity_"+ name+".txt", "wb") as fp:   #Pickle it
 with open("trainloss_likelihood_"+ name+".txt", "wb") as fp:   #Pickle it
     pickle.dump(epoch_trainloss_loglike, fp)
 '''
-#%%
+
+#%% testing loop
+
+#load model
+model = Classifier_BBB(input_size, hidden_size, output_size)
+model.load_state_dict(torch.load("model.pt"))
+#model = torch.load("model.pt")
+
+with torch.no_grad():
+    model.eval()        
+    test_loss, test_accs = [], []; acc = 0
+    test_loss_c, test_loss_l = [], []
+    for i, (x_test, y_test) in enumerate(test_loader):
+       
+        x_test, y_test = x_test.to(device), y_test.to(device)
+            #samples = 5?
+        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_test,samples_batch=batch_size, T=T, burnin=burnin)
+            
+        acc = (pred.mean(dim=0).argmax(dim=-1) == y_test).to(torch.float32).mean()
+            
+        test_loss.append(loss.item())
+        test_loss_c.append(complexity_cost.item())
+        test_loss_l.append(likelihood_cost.item())
+
+        test_accs.append(acc.mean().item())
+        
+testaccs= np.mean(test_accs)
+testerr = (100.*(1 - np.mean(test_accs)))
+testloss = np.mean(test_loss)
+#epoch_testloss_complexity.append(np.mean(test_loss_c))
+#epoch_testloss_loglike.append(np.mean(test_loss_l))
+print("Test error:", testerr)
