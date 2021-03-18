@@ -41,11 +41,11 @@ class Classifier_BBB(nn.Module):
     
     def log_like(self,outputs,target):
         #log P(D|w)
-        return F.nll_loss(outputs, target, reduction='sum')
-        #return F.nll_loss(outputs, target, reduction='mean')
+        #return F.nll_loss(outputs, target, reduction='sum')
+        return F.nll_loss(outputs, target, reduction='mean')
     
     # avg cost function over no. of samples = {1, 2, 5, 10}
-    def sample_elbo(self, input, target, samples, batch, num_batches, burnin=None):
+    def sample_elbo(self, input, target, samples, batch, num_batches, samples_batch, T=1.0, burnin=None):
         
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         
@@ -76,13 +76,18 @@ class Classifier_BBB(nn.Module):
             frac = 2**(num_batches - (batch + 1))/2**(num_batches - 1)
             #frac = 2**(num_batches-batch+1)/(2**(num_batches) - 1)
         elif burnin==None:
-            frac = 1./num_batches 
+            frac = T/(num_batches*samples_batch) # 1./num_batches #
             
         loss = frac*(log_post - log_prior) + log_like #*num_batches
-        #print("weighted complexity cost", frac*(log_post - log_prior))
-        #print("likelihood cost", log_like)
-        #print("loss", loss)
+        '''
+        print("IN SAMPLE ELBO")
+        print("log_post", log_post)
+        print("log_prior", log_prior)
+        print("weighted complexity cost", frac*(log_post - log_prior))
+        print("likelihood cost", log_like)
+        print("loss", loss)
         #print(outputs)
+        '''
         complexity_cost = frac*(log_post - log_prior)
         likelihood_cost = log_like
         
