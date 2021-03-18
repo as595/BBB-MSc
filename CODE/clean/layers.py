@@ -54,30 +54,7 @@ class Linear_BBB(nn.Module):
         """
           Optimization process
         """
-        '''
-        #sample weights
-        w_epsilon = Normal(0,1).sample(self.w_mu.shape).to(self.device)
-        self.w = self.w_mu + torch.log(1+torch.exp(self.w_rho)) * w_epsilon
-        #print('w',self.w)
-        
-        #sample bias
-        b_epsilon = Normal(0,1).sample(self.b_mu.shape).to(self.device)
-        self.b = self.b_mu + torch.log(1+torch.exp(self.b_rho)) * b_epsilon
-        #self.b = nn.Parameter.constant_(0)
-        #print('b',self.b)
-        
-        #record prior
-        w_log_prior = self.prior.log_prob(self.w)
-        b_log_prior = self.prior.log_prob(self.b)
-        self.log_prior = torch.sum(w_log_prior) + torch.sum(b_log_prior) 
-        #print('log prior',self.log_prior)
-        
-        #record variational_posterior - log q(w|theta)
-        self.w_post = Normal(self.w_mu.data, torch.log(1+torch.exp(self.w_rho)))
-        self.b_post = Normal(self.b_mu.data, torch.log(1+torch.exp(self.b_rho)))
-        self.log_post = self.w_post.log_prob(self.w).sum() + self.b_post.log_prob(self.b).sum()
-        #print('log post', self.log_post)
-        '''
+
         #sample weights
         w_epsilon = Normal(0,1).sample(self.w_mu.shape).to(self.device)
         self.w = self.w_mu + torch.exp(self.w_rho) * w_epsilon
