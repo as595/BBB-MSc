@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+Created on Fri Mar 26 14:50:05 2021
+
+@author: devin
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Created on Fri Mar  5 17:06:38 2021
 
 @author: devin
@@ -19,7 +26,7 @@ import pylab as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
 from torch.distributions import Normal
-
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pickle
 import torch.nn.utils.prune as prune
 import os
@@ -76,7 +83,7 @@ output_size = 10
 batch_size= 128
 path = './MNISTdataset'
 #path = './mnist_'
-learning_rate = torch.tensor(1e-5) # Initial learning rate {1e-3, 1e-4, 1e-5}
+learning_rate = torch.tensor(1e-3) # Initial learning rate {1e-3, 1e-4, 1e-5}
 momentum = torch.tensor(9e-1)
 burnin = None
 T = 1.0
@@ -138,11 +145,70 @@ print(model)
 optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum)
 #optimizer = optim.Adam(model.parameters(), lr= torch.tensor(1e-4), weight_decay=torch.tensor(1e-5))
 #optimizer = SGDHinton(model.parameters(), lr=learning_rate, momentum=p_i, l2_limit=torch.tensor(0))
+
+#scheduler = ReduceLROnPlateau(optimizer=optimizer, mode= 'min', factor=0.7, patience=2, verbose=True)
+
 #%%
 num_batches_train = len(train_loader)
 num_batches_valid = len(validation_loader)
 num_batches_test = len(test_loader)
 print(num_batches_train,num_batches_valid, num_batches_test)
+#%%
+def train():
+
+    train_loss, train_accs=[],[]; acc = 0
+    train_loss_c, train_loss_l = [],[]
+    #print("training")
+    for batch, (x_train, y_train) in enumerate(train_loader):
+        model.train()
+        x_train, y_train = x_train.to(device), y_train.to(device)
+        model.zero_grad()
+                
+        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_train, y_train, 1, batch, num_batches_train, samples_batch=len(y_train), T=T, burnin=burnin)
+        train_loss.append(loss.item())
+        train_loss_c.append(complexity_cost.item())
+        train_loss_l.append(likelihood_cost.item())
+
+        acc = (pred.argmax(dim=-1) == y_train).to(torch.float32).mean()
+        train_accs.append(acc.mean().item())
+        
+        loss.backward()
+        #uncomment for Hinton SGD
+        #optimizer.param_groups[0]['lr'] = get_lr(epoch, learning_rate, gamma)
+        #optimizer.param_groups[0]['momentum'] = get_momentum(epoch, p_i, p_f, epochs)
+        
+        optimizer.step()
+        
+    return train_loss, train_loss_c, train_loss_l, train_accs
+#%%
+def test(model):
+    
+    if(epoch==0):
+        pass
+    else:
+        model = Classifier_BBB(input_size, hidden_size, output_size)
+        model.load_state_dict(torch.load("model.pt"))
+        
+    with torch.no_grad():
+        
+        test_loss, test_accs = [], []; acc = 0
+        test_loss_c, test_loss_l = [], []
+        for i, (x_test, y_test) in enumerate(validation_loader):
+                
+            model.eval()
+            x_test, y_test = x_test.to(device), y_test.to(device)
+            loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_valid, samples_batch=len(y_test), T=T, burnin=burnin)
+            
+            acc = (pred.mean(dim=0).argmax(dim=-1) == y_test).to(torch.float32).mean()
+            
+            test_loss.append(loss.item())
+            test_loss_c.append(complexity_cost.item())
+            test_loss_l.append(likelihood_cost.item())
+
+            test_accs.append(acc.mean().item())
+        
+        return test_loss, test_loss_c, test_loss_l, test_accs
+#%%
 #%%
 
 epochs = 1000
@@ -161,71 +227,39 @@ _bestacc = 0.
 
 for epoch in range(epochs):
 
-    train_loss, train_accs=[],[]; acc = 0
-    train_loss_c, train_loss_l = [],[]
-    
-    for batch, (x_train, y_train) in enumerate(train_loader):
-        model.train()
-        x_train, y_train = x_train.to(device), y_train.to(device)
-        model.zero_grad()
-                
-        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_train, y_train, 1, batch, num_batches_train, samples_batch=batch_size, T=T, burnin=burnin)
-        train_loss.append(loss.item())
-        train_loss_c.append(complexity_cost.item())
-        train_loss_l.append(likelihood_cost.item())
-
-        acc = (pred.argmax(dim=-1) == y_train).to(torch.float32).mean()
-        train_accs.append(acc.mean().item())
-        
-        loss.backward()
-        #uncomment for Hinton SGD
-        #optimizer.param_groups[0]['lr'] = get_lr(epoch, learning_rate, gamma)
-        #optimizer.param_groups[0]['momentum'] = get_momentum(epoch, p_i, p_f, epochs)
-        
-        optimizer.step()
+    train_loss, train_loss_c, train_loss_l, train_accs = train()
         
     print('Epoch: {}, Train Loss: {}, Train Accuracy: {}'.format(epoch, np.mean(train_loss), np.mean(train_accs)))
-
-    with torch.no_grad():
-        
-        test_loss, test_accs = [], []; acc = 0
-        test_loss_c, test_loss_l = [], []
-        for i, (x_test, y_test) in enumerate(validation_loader):
-            model.eval()
-            x_test, y_test = x_test.to(device), y_test.to(device)
-            #samples = 5?
-            loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_valid, samples_batch=batch_size, T=T, burnin=burnin)
-            
-            acc = (pred.mean(dim=0).argmax(dim=-1) == y_test).to(torch.float32).mean()
-            
-            test_loss.append(loss.item())
-            test_loss_c.append(complexity_cost.item())
-            test_loss_l.append(likelihood_cost.item())
-
-            test_accs.append(acc.mean().item())
+    
+    
+    test_loss, test_loss_c, test_loss_l, test_accs = test(model)
 
     print('Epoch: {}, Test Loss: {}, Test Accuracy: {}, Test Error: {}'.format(epoch, np.mean(test_loss), np.mean(test_accs), 100.*(1 - np.mean(test_accs))))
+    #print('Epoch: {}, Test Loss: {}, Test Accuracy: {}, Test Error: {}, NLL: {}'.format(epoch, np.mean(test_loss), np.mean(test_accs), 100.*(1 - np.mean(test_accs)), np.mean(test_loss_l)))
+    
 
     #save density and snr
-    '''
-    if(epoch % 40 ==0 ): #40
+    
+    if(epoch % 50 ==0 ): #40
         density, db_SNR = density_snr(model)            
         with open('density' + str(epoch) + '.txt', "wb") as fp:
             pickle.dump(density, fp)
         with open('snr' + str(epoch) + '.txt', "wb") as fp:
             pickle.dump(db_SNR, fp)
-    '''
+    
     epoch_trainaccs.append(np.mean(train_accs))
     epoch_testaccs.append(np.mean(test_accs))
     epoch_testerr.append(100.*(1 - np.mean(test_accs)))
     epoch_trainloss.append(np.mean(train_loss))
     epoch_testloss.append(np.mean(test_loss))
     
-    epoch_trainloss_complexity.append(np.mean(train_loss_c))
+    epoch_trainloss_complexity.append(np.sum(train_loss_c)/len(train_sampler))
     epoch_trainloss_loglike.append(np.mean(train_loss_l))
 
-    epoch_testloss_complexity.append(np.mean(test_loss_c))
+    epoch_testloss_complexity.append(np.sum(test_loss_c)/len(valid_sampler))
     epoch_testloss_loglike.append(np.mean(test_loss_l))
+    
+    #scheduler.step(epoch_testloss_loglike[-1])
     
     accuracy = epoch_testaccs[-1]
     # check early stopping criteria:
@@ -242,10 +276,9 @@ print("Final validation error: ",100.*(1 - epoch_testaccs[-1]))
 if early_stopping:
     print("Best validation error: ",100.*(1 - best_acc)," @ epoch: "+str(best_epoch))
 
-
-if not early_stopping:
-    torch.save(model.state_dict(), "model.pt")
-
+if not early_stopping: 
+    torch.save(model.state_dict(), "model.pt") 
+ 
 
 #%%
 density, db_SNR = density_snr(model)            
@@ -254,17 +287,6 @@ with open('density' + str(1000) + '.txt', "wb") as fp:   #Pickle it
     pickle.dump(density, fp)
 with open('snr' + str(1000) + '.txt', "wb") as fp:   #Pickle it
     pickle.dump(db_SNR, fp)
-'''
-#%%
-'''
-EPOCH = 999
-PATH = "model.pt"
-
-torch.save({
-            'epoch': EPOCH,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            }, PATH)
 '''
 #%%
 ## plots
@@ -360,7 +382,7 @@ with torch.no_grad():
        
         x_test, y_test = x_test.to(device), y_test.to(device)
             #samples = 5?
-        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_test,samples_batch=batch_size, T=T, burnin=burnin)
+        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_test,samples_batch=len(y_test), T=T, burnin=burnin)
             
         acc = (pred.mean(dim=0).argmax(dim=-1) == y_test).to(torch.float32).mean()
             
