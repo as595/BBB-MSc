@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Mar  5 17:04:26 2021
-
-@author: devin
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,6 +23,7 @@ class Classifier_BBB(nn.Module):
         #x = torch.sigmoid(self.h2(x))
         x = torch.relu(self.h1(x))
         x = torch.relu(self.h2(x))
+        #x = F.softmax(self.out(x),dim=1)
         x = F.log_softmax(self.out(x),dim=1)
         return x
     
@@ -39,13 +33,17 @@ class Classifier_BBB(nn.Module):
     def log_post(self):
         return self.h1.log_post + self.h2.log_post + self.out.log_post
     
-    def log_like(self,outputs,target):
+    def log_like(self,outputs,target, reduction):
         #log P(D|w)
-        #return F.nll_loss(outputs, target, reduction='sum')
-        return F.nll_loss(outputs, target, reduction='mean')
-    
+        if reduction == "sum":
+            return F.nll_loss(outputs, target, reduction='sum')
+        elif reduction == "mean":
+            return F.nll_loss(outputs, target, reduction='mean')
+        else:
+            pass
+        
     # avg cost function over no. of samples = {1, 2, 5, 10}
-    def sample_elbo(self, input, target, samples, batch, num_batches, samples_batch, T=1.0, burnin=None):
+    def sample_elbo(self, input, target, samples, batch, num_batches, samples_batch, T=1.0, burnin=None, reduction = "sum"):
         
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         
@@ -59,7 +57,7 @@ class Classifier_BBB(nn.Module):
             outputs[i] = self(input)
             log_priors[i] = self.log_prior()
             log_posts[i] = self.log_post()
-            log_likes[i] = self.log_like(outputs[i,:,:], target)
+            log_likes[i] = self.log_like(outputs[i,:,:], target, reduction)
  
          
         # the mean of a sum is the sum of the means:
@@ -76,9 +74,13 @@ class Classifier_BBB(nn.Module):
             frac = 2**(num_batches - (batch + 1))/2**(num_batches - 1)
             #frac = 2**(num_batches-batch+1)/(2**(num_batches) - 1)
         elif burnin==None:
-            frac = T/(num_batches*samples_batch) # 1./num_batches #
-            
-        loss = frac*(log_post - log_prior) + log_like #*num_batches
+            if reduction == "sum":
+                frac = T/(num_batches*samples_batch) # 1./num_batches #
+            elif reduction == "mean":
+                frac = T/(num_batches*samples_batch)
+            else:
+                pass
+        loss = frac*(log_post - log_prior) + log_like
         '''
         print("IN SAMPLE ELBO")
         print("log_post", log_post)
@@ -88,6 +90,7 @@ class Classifier_BBB(nn.Module):
         print("loss", loss)
         #print(outputs)
         '''
+        #print("weighted complexity cost", frac*(log_post - log_prior))
         complexity_cost = frac*(log_post - log_prior)
         likelihood_cost = log_like
         
