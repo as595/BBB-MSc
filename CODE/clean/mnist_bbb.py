@@ -68,11 +68,13 @@ hidden_size = 800
 output_size = 10
 batch_size= 128
 path = './MNISTdataset'
-#path = './mnist_'
-learning_rate = torch.tensor(1e-3) # Initial learning rate {1e-3, 1e-4, 1e-5}
+#path = '/kaggle/input/mnistdataset'
+learning_rate = torch.tensor(1e-4) # Initial learning rate {1e-3, 1e-4, 1e-5} -- use larger LR with reduction = 'sum' 
 momentum = torch.tensor(9e-1)
 burnin = None
 T = 1.0
+reduction = "sum" #{"sum", "mean"}
+
 #uncomment for Hinton SGD
 '''
 learning_rate = torch.tensor(1e-1) #1e-1 # Initial learning rate
@@ -98,7 +100,6 @@ urllib.request.install_opener(opener)
 transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.1307,), (0.3081,))])
 
 trainset = datasets.MNIST(root = path, train=True, download=True, transform=transform)
-#trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=batch_size,shuffle=True, drop_last=False, **kwargs)
 
 # https://stackoverflow.com/questions/50544730/how-do-i-split-a-custom-dataset-into-training-and-test-datasets 
 # Creating data indices for training and validation splits:
@@ -150,7 +151,7 @@ def train():
         x_train, y_train = x_train.to(device), y_train.to(device)
         model.zero_grad()
                 
-        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_train, y_train, 1, batch, num_batches_train, samples_batch=len(y_train), T=T, burnin=burnin)
+        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_train, y_train, 1, batch, num_batches_train, samples_batch=len(y_train), T=T, burnin=burnin, reduction=reduction)
         train_loss.append(loss.item())
         train_loss_c.append(complexity_cost.item())
         train_loss_l.append(likelihood_cost.item())
@@ -183,7 +184,7 @@ def test(model):
                 
             model.eval()
             x_test, y_test = x_test.to(device), y_test.to(device)
-            loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_valid, samples_batch=len(y_test), T=T, burnin=burnin)
+            loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_valid, samples_batch=len(y_test), T=T, burnin=burnin, reduction=reduction)
             
             acc = (pred.mean(dim=0).argmax(dim=-1) == y_test).to(torch.float32).mean()
             
@@ -194,7 +195,6 @@ def test(model):
             test_accs.append(acc.mean().item())
         
         return test_loss, test_loss_c, test_loss_l, test_accs
-#%%
 #%%
 
 epochs = 1000
@@ -239,10 +239,10 @@ for epoch in range(epochs):
     epoch_trainloss.append(np.mean(train_loss))
     epoch_testloss.append(np.mean(test_loss))
     
-    epoch_trainloss_complexity.append(np.sum(train_loss_c)/len(train_sampler))
+    epoch_trainloss_complexity.append(np.sum(train_loss_c))
     epoch_trainloss_loglike.append(np.mean(train_loss_l))
 
-    epoch_testloss_complexity.append(np.sum(test_loss_c)/len(valid_sampler))
+    epoch_testloss_complexity.append(np.sum(test_loss_c))
     epoch_testloss_loglike.append(np.mean(test_loss_l))
     
     #scheduler.step(epoch_testloss_loglike[-1])
@@ -273,6 +273,17 @@ with open('density' + str(1000) + '.txt', "wb") as fp:   #Pickle it
     pickle.dump(density, fp)
 with open('snr' + str(1000) + '.txt', "wb") as fp:   #Pickle it
     pickle.dump(db_SNR, fp)
+'''
+#%%
+'''
+EPOCH = 999
+PATH = "model.pt"
+
+torch.save({
+            'epoch': EPOCH,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            }, PATH)
 '''
 #%%
 ## plots
@@ -333,7 +344,7 @@ plt.xlabel('Signal-to-Noise')
 sns.kdeplot(db_SNR, x="SNR", fill=False,alpha=0.5, cumulative=True, color= 'black')
 #%%
 '''
-name = 'bbb28'
+name = 'model9'
 
 with open("testloss_"+ name+".txt", "wb") as fp:   #Pickle it
     pickle.dump(epoch_testloss, fp)
@@ -368,7 +379,7 @@ with torch.no_grad():
        
         x_test, y_test = x_test.to(device), y_test.to(device)
             #samples = 5?
-        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_test,samples_batch=len(y_test), T=T, burnin=burnin)
+        loss, pred, complexity_cost, likelihood_cost = model.sample_elbo(x_test, y_test, 1, i, num_batches_test,samples_batch=len(y_test), T=T, burnin=burnin, reduction=reduction)
             
         acc = (pred.mean(dim=0).argmax(dim=-1) == y_test).to(torch.float32).mean()
             
@@ -381,6 +392,8 @@ with torch.no_grad():
 testaccs= np.mean(test_accs)
 testerr = (100.*(1 - np.mean(test_accs)))
 testloss = np.mean(test_loss)
-#epoch_testloss_complexity.append(np.mean(test_loss_c))
-#epoch_testloss_loglike.append(np.mean(test_loss_l))
+epoch_testloss_complexity.append(np.sum(test_loss_c))
+epoch_testloss_loglike.append(np.mean(test_loss_l))
+#print(epoch_testloss_complexity)
+#print(epoch_testloss_loglike)
 print("Test error:", testerr)
